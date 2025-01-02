@@ -1,0 +1,98 @@
+#!/bin/bash
+
+# Function to log messages to the macOS Console
+log_to_console() {
+    local message="$1"
+    logger "[Keyboard Maestro List Script] $message"
+    echo "$message"
+}
+
+# Function to apply color formatting
+apply_color() {
+    local color_code="$1"
+    local text="$2"
+    echo -e "\033[${color_code}m${text}\033[0m"
+}
+
+# Function to list actions from a given directory
+list_actions_from_dir() {
+    local actions_dir="$1"
+    local header="$2"
+    local color="$3"
+
+    # Check if the directory exists
+    if [[ ! -d "$actions_dir" ]]; then
+        echo -e "\n$(apply_color "$color" "$header")"
+        echo "(No plugins found in this directory)"
+        return
+    fi
+
+    # Initialize arrays for column data
+    local folder_names=()
+    local titles=()
+    local authors=()
+
+    # Read each action folder and gather data
+    for action_folder in "$actions_dir"/*; do
+        if [[ -d "$action_folder" ]]; then
+            folder_name=$(basename "$action_folder")
+            plist_file="$action_folder/Keyboard Maestro Action.plist"
+
+            # Initialize variables
+            title="N/A"
+            author="N/A"
+
+            # Check if the plist file exists and read its contents
+            if [[ -f "$plist_file" ]]; then
+                title=$(/usr/libexec/PlistBuddy -c "Print :Title" "$plist_file" 2>/dev/null || echo "N/A")
+                author=$(/usr/libexec/PlistBuddy -c "Print :Author" "$plist_file" 2>/dev/null || echo "N/A")
+            fi
+
+            # Add to arrays
+            folder_names+=("$folder_name")
+            titles+=("$title")
+            authors+=("$author")
+        fi
+    done
+
+    # Determine the maximum column widths
+    local max_folder_name_width=12 # Minimum width for "Folder Name"
+    local max_title_width=5        # Minimum width for "Title"
+    local max_author_width=6       # Minimum width for "Author"
+
+    for i in "${!folder_names[@]}"; do
+        (( max_folder_name_width = ${#folder_names[i]} > max_folder_name_width ? ${#folder_names[i]} : max_folder_name_width ))
+        (( max_title_width = ${#titles[i]} > max_title_width ? ${#titles[i]} : max_title_width ))
+        (( max_author_width = ${#authors[i]} > max_author_width ? ${#authors[i]} : max_author_width ))
+    done
+
+    # Print the header
+    echo -e "\n$(apply_color "$color" "$header")"
+    echo -e "$(printf '%*s' "${#header}" | tr ' ' '=')"
+
+    # Print the table header row
+    printf "%-${max_folder_name_width}s  %-${max_title_width}s  %-${max_author_width}s\n" "Folder Name" "Title" "Author"
+    printf "%-${max_folder_name_width}s  %-${max_title_width}s  %-${max_author_width}s\n" "$(printf '%*s' "$max_folder_name_width" | tr ' ' '-')" \
+        "$(printf '%*s' "$max_title_width" | tr ' ' '-')" \
+        "$(printf '%*s' "$max_author_width" | tr ' ' '-')"
+
+    # Print the data rows
+    for i in "${!folder_names[@]}"; do
+        printf "%-${max_folder_name_width}s  %-${max_title_width}s  %-${max_author_width}s\n" \
+            "${folder_names[i]}" "${titles[i]}" "${authors[i]}"
+    done
+}
+
+# Main logic for km-builder-list
+process_list() {
+    local enabled_dir="$HOME/Library/Application Support/Keyboard Maestro/Keyboard Maestro Actions"
+    local disabled_dir="$HOME/Library/Application Support/Keyboard Maestro/Keyboard Maestro Actions (Disabled)"
+
+    # List enabled actions with bold green header
+    list_actions_from_dir "$enabled_dir" "ENABLED PLUGINS" "1;32"
+
+    # List disabled actions with bold red header
+    list_actions_from_dir "$disabled_dir" "DISABLED PLUGINS" "1;31"
+}
+
+process_list

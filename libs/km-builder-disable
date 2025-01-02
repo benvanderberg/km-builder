@@ -1,0 +1,52 @@
+#!/bin/bash
+
+# Function to log messages to the macOS Console
+log_to_console() {
+    local message="$1"
+    logger "[Keyboard Maestro Disable Script] $message"
+    echo "$message"
+}
+
+# Function to handle disabling an action
+process_disable() {
+    local action_name="$1"
+    local km_actions_dir="$HOME/Library/Application Support/Keyboard Maestro/Keyboard Maestro Actions"
+    local disabled_actions_dir="$km_actions_dir (Disabled)"
+    local target_dir="$km_actions_dir/$action_name"
+    local disabled_target_dir="$disabled_actions_dir/$action_name"
+
+    # Ensure the Keyboard Maestro Actions directory exists
+    if [[ ! -d "$km_actions_dir" ]]; then
+        log_to_console "Error: Keyboard Maestro Actions directory does not exist."
+        exit 1
+    fi
+
+    # Ensure the Keyboard Maestro Actions (Disabled) directory exists
+    if [[ ! -d "$disabled_actions_dir" ]]; then
+        log_to_console "Creating directory: $disabled_actions_dir"
+        mkdir -p "$disabled_actions_dir"
+    fi
+
+    # Check if the folder exists in the Actions directory
+    if [[ -d "$target_dir" ]]; then
+        # Move the folder to the Disabled directory
+        mv "$target_dir" "$disabled_actions_dir"
+        log_to_console "Action '$action_name' has been disabled."
+    elif [[ -d "$disabled_target_dir" ]]; then
+        # Already in the Disabled directory
+        log_to_console "Action '$action_name' is already disabled."
+    else
+        # Folder not found
+        log_to_console "Error: Action '$action_name' does not exist in the Keyboard Maestro Actions directory."
+        exit 1
+    fi
+}
+
+# Main logic for km-builder-disable
+if [[ $# -lt 1 ]]; then
+    echo "Usage: km-builder-disable <action_name>"
+    exit 1
+fi
+
+action_name="$1"
+process_disable "$action_name"

@@ -1,0 +1,153 @@
+#!/bin/bash
+
+# Function to initialize a new Keyboard Maestro Action project
+process_init() {
+    local folder_name="$1"
+
+    if [[ -z "$folder_name" ]]; then
+        read -p "Enter the folder name: " folder_name
+    fi
+
+    # Create or cd into the folder
+    if [[ -d $folder_name ]]; then
+        echo "Folder '$folder_name' already exists."
+    else
+        mkdir "$folder_name"
+        echo "Folder '$folder_name' created."
+    fi
+    cd "$folder_name" || exit
+
+    # Collect project details
+    read -p "Name (default: Folder Name '$folder_name'): " action_name
+    action_name=${action_name:-$folder_name}
+    read -p "Results (None, Window, Briefly, Variable, Clipboard, or all): " results_input
+    results=$(echo "$results_input" | sed 's/,/|/g')
+    read -p "Timeout (default: 30): " timeout
+    timeout=${timeout:-30}
+    read -p "Help: " help_text
+    read -p "Script Language (AppleScript/Shell): " script_language
+    read -p "Author: " author
+    read -p "Group (optional): " group_name
+    read -p "Homebrew dependencies (comma-separated, optional): " homebrew_deps_input
+
+    # Set Script based on Script Language
+    if [[ "$script_language" == "AppleScript" ]]; then
+        script="Action.applescript"
+    elif [[ "$script_language" == "Shell" ]]; then
+        script="Action.sh"
+    else
+        echo "Invalid Script Language. Please specify 'AppleScript' or 'Shell'."
+        exit 1
+    fi
+
+    # Create the plist file
+    plist_file="Keyboard Maestro Action.plist"
+    /usr/libexec/PlistBuddy -c "Clear" "$plist_file" > /dev/null 2>&1 || touch "$plist_file"
+    /usr/libexec/PlistBuddy -c "Add :Name string '$action_name'" "$plist_file"
+    /usr/libexec/PlistBuddy -c "Add :Title string '$action_name'" "$plist_file"
+    /usr/libexec/PlistBuddy -c "Add :Results string '$results'" "$plist_file"
+    /usr/libexec/PlistBuddy -c "Add :Timeout integer $timeout" "$plist_file"
+    /usr/libexec/PlistBuddy -c "Add :Help string '$help_text'" "$plist_file"
+    /usr/libexec/PlistBuddy -c "Add :Script string '$script'" "$plist_file"
+    /usr/libexec/PlistBuddy -c "Add :Icon string 'Icon.png'" "$plist_file"
+    /usr/libexec/PlistBuddy -c "Add :Author string '$author'" "$plist_file"
+
+    # Add Group if provided
+    if [[ -n "$group_name" ]]; then
+        /usr/libexec/PlistBuddy -c "Add :Group string '$group_name'" "$plist_file"
+    fi
+
+    # Add Homebrew dependencies if provided
+    if [[ -n "$homebrew_deps_input" ]]; then
+        /usr/libexec/PlistBuddy -c "Add :HomebrewLibs array" "$plist_file"
+        IFS=',' read -r -a homebrew_deps <<< "$homebrew_deps_input"
+        for dep in "${homebrew_deps[@]}"; do
+            trimmed_dep=$(echo "$dep" | xargs) # Trim whitespace
+            /usr/libexec/PlistBuddy -c "Add :HomebrewLibs: string '$trimmed_dep'" "$plist_file"
+        done
+    fi
+
+    # Prompt for parameters
+    /usr/libexec/PlistBuddy -c "Add :Parameters array" "$plist_file"
+    while true; do
+        read -p "Do you want to add a parameter? (Yes/No): " add_param
+        if [[ "$add_param" =~ ^[Nn]o$ ]]; then
+            break
+        elif [[ "$add_param" =~ ^[Yy]es$ ]]; then
+            read -p "Parameter Label: " param_label
+            read -p "Parameter Type (default: TokenString): " param_type
+            param_type=${param_type:-TokenString}
+
+            # If type is PopupMenu, ask for menu options
+            if [[ "$param_type" == "PopupMenu" ]]; then
+                read -p "Menu Options (comma-separated): " menu_input
+                menu=$(echo "$menu_input" | sed 's/,/|/g')
+            fi
+
+            read -p "Default Value (optional): " param_default
+
+            # Add the parameter to the plist file
+            /usr/libexec/PlistBuddy -c "Add :Parameters: dict" "$plist_file"
+            current_index=$(/usr/libexec/PlistBuddy -c "Print :Parameters" "$plist_file" | grep -c "Dict")
+            current_index=$((current_index - 1))
+            /usr/libexec/PlistBuddy -c "Add :Parameters:$current_index:Label string '$param_label'" "$plist_file"
+            /usr/libexec/PlistBuddy -c "Add :Parameters:$current_index:Type string '$param_type'" "$plist_file"
+
+            if [[ "$param_type" == "PopupMenu" ]]; then
+                /usr/libexec/PlistBuddy -c "Add :Parameters:$current_index:Menu string '$menu'" "$plist_file"
+            fi
+
+            if [[ -n "$param_default" ]]; then
+                /usr/libexec/PlistBuddy -c "Add :Parameters:$current_index:Default string '$param_default'" "$plist_file"
+            fi
+        else
+            echo "Invalid input. Please answer Yes or No."
+        fi
+    done
+
+    echo "Plist file created: $plist_file"
+
+    # Copy the Icon file
+    local script_dir
+    script_dir=$(dirname "$(realpath "$0")")
+    local icon_source="$script_dir/../data/Icon.png"
+    if [[ -f "$icon_source" ]]; then
+        cp "$icon_source" .
+        echo "Icon file copied to the action folder."
+    else
+        echo "Warning: Icon.png not found in the data directory. Skipping icon copy."
+    fi
+
+    # Create the script file
+    if [[ "$script_language" == "AppleScript" ]]; then
+        touch "Action.applescript"
+        echo "AppleScript file created: Action.applescript"
+    elif [[ "$script_language" == "Shell" ]]; then
+        touch "Action.sh"
+        chmod +x "Action.sh"
+        echo "Shell script file created: Action.sh"
+    fi
+
+    # Check for VSCode and open the folder if desired
+    if command -v code &>/dev/null; then
+        read -p "Do you want to open the folder in VSCode? (Yes/No): " open_vscode
+        if [[ "$open_vscode" =~ ^[Yy]es$ ]]; then
+            code "$(pwd)"
+            return
+        fi
+    fi
+
+    # Ask to open the folder in Finder if not opened in VSCode
+    read -p "Do you want to open the folder in Finder? (Yes/No): " open_finder
+    if [[ "$open_finder" =~ ^[Yy]es$ ]]; then
+        open "$(pwd)"
+    fi
+}
+
+# Main logic for km-builder-init
+if [[ $# -lt 1 ]]; then
+    echo "Usage: km-builder-init <folder_name>"
+    exit 1
+fi
+
+process_init "$1"

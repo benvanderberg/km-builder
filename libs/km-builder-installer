@@ -1,0 +1,126 @@
+#!/bin/bash
+
+# Function to log messages to the macOS Console
+log_to_console() {
+    local message="$1"
+    logger "[Keyboard Maestro Installer Script] $message"
+    echo "$message"
+}
+
+# Function to check for Homebrew and install it if necessary
+ensure_homebrew_installed() {
+    if ! command -v brew &>/dev/null; then
+        echo "Homebrew is not installed."
+        read -p "Would you like to install Homebrew? (Yes/No): " install_brew
+        if [[ "$install_brew" =~ ^[Yy]es$ ]]; then
+            echo "Installing Homebrew..."
+            /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+            if ! command -v brew &>/dev/null; then
+                echo "Error: Homebrew installation failed. Please install it manually."
+                exit 1
+            fi
+            echo "Homebrew installed successfully."
+        else
+            echo "Homebrew is required to proceed. Aborting installation."
+            exit 1
+        fi
+    fi
+}
+
+# Function to install Homebrew dependencies
+install_homebrew_dependencies() {
+    local plist_file="$1"
+    local dependencies
+
+    # Check if the plist file contains the HomebrewLibs key
+    dependencies=$(/usr/libexec/PlistBuddy -c "Print :HomebrewLibs" "$plist_file" 2>/dev/null)
+    if [[ $? -ne 0 ]]; then
+        return # No dependencies found
+    fi
+
+    # Prompt the user to confirm installation of dependencies
+    echo "This action has the following dependencies: $dependencies"
+    read -p "Would you like to install these dependencies using Homebrew? (Yes/No): " install_deps
+    if [[ "$install_deps" =~ ^[Nn]o$ ]]; then
+        echo "Skipping dependency installation. Some functionality may not work."
+        return
+    fi
+
+    # Ensure Homebrew is installed
+    ensure_homebrew_installed
+
+    # Install each dependency
+    dependencies=$(echo "$dependencies" | sed 's/[()<>]//g' | tr -d '\n' | tr ' ' '\n')
+    for dep in $dependencies; do
+        echo "Installing $dep..."
+        brew install "$dep"
+        if [[ $? -ne 0 ]]; then
+            echo "Error: Failed to install $dep. Please check the Homebrew logs."
+        else
+            echo "$dep installed successfully."
+        fi
+    done
+}
+
+# Function to handle installation
+process_install() {
+    local install_path="$1"
+
+    # Check if the path exists and is a directory
+    if [[ ! -d "$install_path" ]]; then
+        log_to_console "Error: Specified path does not exist or is not a directory."
+        exit 1
+    fi
+
+    # Get the folder name from the specified path
+    local folder_name
+    folder_name=$(basename "$install_path")
+    local km_actions_dir="$HOME/Library/Application Support/Keyboard Maestro/Keyboard Maestro Actions"
+    local target_dir="$km_actions_dir/$folder_name"
+
+    # Ensure the Keyboard Maestro Actions directory exists
+    if [[ ! -d "$km_actions_dir" ]]; then
+        log_to_console "Creating directory: $km_actions_dir"
+        mkdir -p "$km_actions_dir"
+    fi
+
+    # Check if the folder already exists in Keyboard Maestro Actions
+    if [[ -d "$target_dir" ]]; then
+        read -p "The folder '$folder_name' already exists in Keyboard Maestro Actions. Do you want to replace it? (Yes/No): " replace
+        if [[ "$replace" =~ ^[Yy]es$ ]]; then
+            log_to_console "Replacing existing folder: $target_dir"
+            rm -rf "$target_dir"
+            cp -R "$install_path" "$target_dir"
+            log_to_console "Folder '$folder_name' replaced successfully."
+        else
+            log_to_console "Installation aborted. Existing folder not replaced."
+            exit 0
+        fi
+    else
+        log_to_console "Copying folder '$folder_name' to Keyboard Maestro Actions."
+        cp -R "$install_path" "$target_dir"
+        log_to_console "Folder '$folder_name' installed successfully."
+    fi
+
+    # Check for dependencies and install them
+    local plist_file="$install_path/Keyboard Maestro Action.plist"
+    if [[ -f "$plist_file" ]]; then
+        install_homebrew_dependencies "$plist_file"
+    else
+        echo "Warning: No plist file found. Skipping dependency installation."
+    fi
+
+    # Reload Keyboard Maestro and Keyboard Maestro Engine
+    log_to_console "Reloading Keyboard Maestro and Keyboard Maestro Engine."
+    osascript -e 'tell application "Keyboard Maestro" to reload' -e 'tell application "Keyboard Maestro Engine" to reload'
+    log_to_console "Keyboard Maestro reloaded successfully."
+}
+
+# Main logic for km-builder-installer
+if [[ $# -lt 1 ]]; then
+    echo "Usage: km-builder-installer <path>"
+    exit 1
+fi
+
+install_path="$1"
+process_install "$install_path"

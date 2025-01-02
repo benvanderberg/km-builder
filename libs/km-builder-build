@@ -1,0 +1,76 @@
+#!/bin/bash
+
+# Function to log messages to the macOS Console
+log_to_console() {
+    local message="$1"
+    logger "[Keyboard Maestro Build Script] $message"
+    echo "$message"
+}
+
+# Function to handle the build process
+process_build() {
+    local build_path="$1"
+
+    # Check if the path exists
+    if [[ ! -e "$build_path" ]]; then
+        log_to_console "Error: Specified path does not exist."
+        exit 1
+    fi
+
+    local build_dir=""
+
+    # If it's a zip file, unzip it
+    if [[ "$build_path" == *.zip ]]; then
+        log_to_console "Unzipping $build_path..."
+        unzip "$build_path" -d ./unzipped_folder
+        build_dir="./unzipped_folder"
+    elif [[ -d "$build_path" ]]; then
+        log_to_console "Using folder $build_path..."
+        build_dir="$build_path"
+    else
+        log_to_console "Error: The specified path must be a .zip file or a folder."
+        exit 1
+    fi
+
+    # Check for "Keyboard Maestro Action.plist"
+    if [[ ! -f "$build_dir/Keyboard Maestro Action.plist" ]]; then
+        log_to_console "Error: 'Keyboard Maestro Action.plist' not found in $build_dir."
+        exit 1
+    fi
+
+    log_to_console "'Keyboard Maestro Action.plist' found in $build_dir."
+
+    # Compile .applescript files to .scpt
+    for applescript_file in "$build_dir"/*.applescript; do
+        if [[ -f "$applescript_file" ]]; then
+            local compiled_file="${applescript_file%.applescript}.scpt"
+            log_to_console "Compiling $applescript_file to $compiled_file..."
+            osacompile -o "$compiled_file" "$applescript_file"
+        fi
+    done
+
+    # Read the plist file for the "Script" parameter
+    script_name=$(/usr/libexec/PlistBuddy -c "Print :Script" "$build_dir/Keyboard Maestro Action.plist" 2>/dev/null)
+    if [[ -n "$script_name" ]]; then
+        log_to_console "Script parameter found: $script_name."
+        if [[ ! -f "$build_dir/$script_name" ]]; then
+            log_to_console "Error: Script file $script_name not found in $build_dir."
+            exit 1
+        else
+            log_to_console "Script file $script_name exists in $build_dir."
+        fi
+    else
+        log_to_console "No 'Script' parameter found in the plist file."
+    fi
+
+    log_to_console "Build process completed successfully for $build_path."
+}
+
+# Main logic for km-builder-build
+if [[ $# -lt 1 ]]; then
+    echo "Usage: km-builder-build <path>"
+    exit 1
+fi
+
+build_path="$1"
+process_build "$build_path"

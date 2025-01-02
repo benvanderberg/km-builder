@@ -1,20 +1,5 @@
 #!/bin/bash
 
-# Function to convert a string to camel case
-to_camel_case() {
-    local input="$1"
-    # Remove all non-alphanumeric characters except spaces
-    input=$(echo "$input" | sed -E 's/[^a-zA-Z0-9 ]//g')
-    # Convert to camel case
-    echo "$input" | awk '{
-        for (i=1; i<=NF; i++) {
-            $i = tolower($i);
-            if (i > 1) $i = toupper(substr($i, 1, 1)) substr($i, 2);
-        }
-        print
-    }' | tr -d ' '
-}
-
 # Function to determine the full path to the script directory
 get_script_dir() {
     local script_path
@@ -22,138 +7,64 @@ get_script_dir() {
     dirname "$script_path"       # Extract the directory
 }
 
-# Function to process results input
-process_results() {
-    local input="$1"
-    local results=""
-    if [[ "$input" == "all" ]]; then
-        results="None|Window|Briefly|Variable|Clipboard"
-    else
-        results=$(echo "$input" | sed 's/,/|/g')
-    fi
-    echo "$results"
-}
-
-# Function to process parameters and add them to the plist file
-add_parameters_to_plist() {
-    local plist_file="$1"
-    local parameters=()
-    /usr/libexec/PlistBuddy -c "Add :Parameters array" "$plist_file"
-    while true; do
-        read -p "Do you have parameters? (Yes/No): " has_parameters
-        if [[ "$has_parameters" =~ ^[Nn]o$ ]]; then
-            break
-        elif [[ "$has_parameters" =~ ^[Yy]es$ ]]; then
-            read -p "Label: " label
-            read -p "Type (String,TokenString,Calculation,Text,TokenText,Checkbox,PopupMenu,Hidden): " type
-
-            # If type is PopupMenu, prompt for Menu
-            if [[ "$type" == "PopupMenu" ]]; then
-                read -p "Menu (comma delimited): " menu_input
-                menu=$(echo "$menu_input" | sed 's/,/|/g')
-            fi
-
-            read -p "Default (optional): " default
-
-            # Add parameter as a dictionary to the Parameters array
-            /usr/libexec/PlistBuddy -c "Add :Parameters: dict" "$plist_file"
-            current_index=$(/usr/libexec/PlistBuddy -c "Print :Parameters" "$plist_file" | grep -c "Dict")
-            current_index=$((current_index - 1))
-            /usr/libexec/PlistBuddy -c "Add :Parameters:$current_index:Label string '$label'" "$plist_file"
-            /usr/libexec/PlistBuddy -c "Add :Parameters:$current_index:Type string '$type'" "$plist_file"
-            if [[ "$type" == "PopupMenu" ]]; then
-                /usr/libexec/PlistBuddy -c "Add :Parameters:$current_index:Menu string '$menu'" "$plist_file"
-            fi
-            if [[ -n "$default" ]]; then
-                /usr/libexec/PlistBuddy -c "Add :Parameters:$current_index:Default string '$default'" "$plist_file"
-            fi
-
-            # Add parameter details to an array for later use in AppleScript generation
-            parameters+=("$label")
-
-            echo "Parameter added."
-        else
-            echo "Invalid response. Please answer Yes or No."
-        fi
-    done
-    echo "${parameters[@]}"
-}
-
 # Main script logic
-if [[ $1 == "init" ]]; then
-    folder_name="$2"
-    if [[ -z $folder_name ]]; then
-        read -p "Enter the folder name: " folder_name
-    fi
+command="$1"
+argument="$2"
 
-    # Create or cd into the folder
-    if [[ -d $folder_name ]]; then
-        echo "Folder '$folder_name' already exists."
-    else
-        mkdir "$folder_name"
-        echo "Folder '$folder_name' created."
-    fi
-    cd "$folder_name" || exit
+libs_dir=$(get_script_dir)/libs
 
-    # Collect project details
-    read -p "Name (default: Folder Name '$folder_name'): " action_name
-    action_name=${action_name:-$folder_name}
-    read -p "Results (None, Window, Briefly, Variable, Clipboard, or all): " results_input
-    results=$(process_results "$results_input")
-    read -p "Timeout (default: 30): " timeout
-    timeout=${timeout:-30}
-    read -p "Help: " help_text
-    read -p "Script Language (AppleScript/Shell): " script_language
-    read -p "Author: " author
-
-    # Set Script based on Script Language
-    if [[ "$script_language" == "AppleScript" ]]; then
-        script="Action.applescript"
-    elif [[ "$script_language" == "Shell" ]]; then
-        script="Action.sh"
-    else
-        echo "Invalid Script Language. Please specify 'AppleScript' or 'Shell'."
+case "$command" in
+    init)
+        if [[ ! -x "$libs_dir/km-builder-init" ]]; then
+            echo "Error: km-builder-init script not found or not executable in $libs_dir."
+            exit 1
+        fi
+        "$libs_dir/km-builder-init" "$argument"
+        ;;
+    build)
+        if [[ ! -x "$libs_dir/km-builder-build" ]]; then
+            echo "Error: km-builder-build script not found or not executable in $libs_dir."
+            exit 1
+        fi
+        "$libs_dir/km-builder-build" "$argument"
+        ;;
+    install)
+        if [[ ! -x "$libs_dir/km-builder-installer" ]]; then
+            echo "Error: km-builder-installer script not found or not executable in $libs_dir."
+            exit 1
+        fi
+        "$libs_dir/km-builder-installer" "$argument"
+        ;;
+    disable)
+        if [[ ! -x "$libs_dir/km-builder-disable" ]]; then
+            echo "Error: km-builder-disable script not found or not executable in $libs_dir."
+            exit 1
+        fi
+        "$libs_dir/km-builder-disable" "$argument"
+        ;;
+    enable)
+        if [[ ! -x "$libs_dir/km-builder-enable" ]]; then
+            echo "Error: km-builder-enable script not found or not executable in $libs_dir."
+            exit 1
+        fi
+        "$libs_dir/km-builder-enable" "$argument"
+        ;;
+    list)
+        if [[ ! -x "$libs_dir/km-builder-list" ]]; then
+            echo "Error: km-builder-list script not found or not executable in $libs_dir."
+            exit 1
+        fi
+        "$libs_dir/km-builder-list"
+        ;;
+    uninstall)
+        if [[ ! -x "$libs_dir/km-builder-uninstall" ]]; then
+            echo "Error: km-builder-uninstall script not found or not executable in $libs_dir."
+            exit 1
+        fi
+        "$libs_dir/km-builder-uninstall" "$argument"
+        ;;
+    *)
+        echo "Usage: $0 <init|build|install|disable|enable|list|uninstall> [arguments]"
         exit 1
-    fi
-
-    # Create the plist file using PlistBuddy
-    plist_file="Keyboard Maestro Action.plist"
-    /usr/libexec/PlistBuddy -c "Clear" "$plist_file" > /dev/null 2>&1 || touch "$plist_file"
-    /usr/libexec/PlistBuddy -c "Add :Name string '$action_name'" "$plist_file"
-    /usr/libexec/PlistBuddy -c "Add :Title string '$action_name'" "$plist_file"
-    /usr/libexec/PlistBuddy -c "Add :Results string '$results'" "$plist_file"
-    /usr/libexec/PlistBuddy -c "Add :Timeout integer $timeout" "$plist_file"
-    /usr/libexec/PlistBuddy -c "Add :Help string '$help_text'" "$plist_file"
-    /usr/libexec/PlistBuddy -c "Add :Script string '$script'" "$plist_file"
-    /usr/libexec/PlistBuddy -c "Add :Icon string 'Icon.png'" "$plist_file"
-    /usr/libexec/PlistBuddy -c "Add :Author string '$author'" "$plist_file"
-
-    # Add parameters
-    parameters=$(add_parameters_to_plist "$plist_file")
-
-    # Generate the AppleScript file if AppleScript is chosen
-    if [[ "$script_language" == "AppleScript" ]]; then
-        applescript_file="Action.applescript"
-        touch "$applescript_file"
-        for param in $parameters; do
-            param_camel_case=$(to_camel_case "$param")
-            param_key=$(echo "$param" | sed 's/ /_/g')
-            echo "set param${param_camel_case} to system attribute \"KMPARAM_${param_key}\"" >> "$applescript_file"
-        done
-        echo "AppleScript file created: $applescript_file"
-    fi
-
-    # Ensure the script looks for Icon.png in the script's directory
-    script_dir=$(get_script_dir)
-    if [[ -f "$script_dir/data/Icon.png" ]]; then
-        cp "$script_dir/data/Icon.png" .
-        echo "Icon.png copied to $folder_name."
-    else
-        echo "Warning: Icon.png not found in $script_dir/data."
-    fi
-
-    echo "Plist file created: $plist_file"
-else
-    echo "Usage: $0 init [folder_name]"
-    exit 1
-fi
+        ;;
+esac

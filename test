@@ -1,0 +1,4 @@
+#!/bin/bash
+
+dirname=$(dirname "$(realpath "$0")")
+echo $dirname
